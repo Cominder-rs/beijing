@@ -1,70 +1,66 @@
-mod api;
 mod error;
 
-#[macro_use]
-extern crate serde_json;
-
-use axum::response::{IntoResponse, Response};
-use axum::{routing::post, Json, Router};
+use axum::{response::Html, routing::post, Router};
 use civilization::init_service;
-use jsonwebtoken::{DecodingKey, EncodingKey};
-use once_cell::sync::Lazy;
-use serde::Serialize;
+use redis::aio::Connection;
+use redis::{AsyncCommands, Client};
+use redis::{ErrorKind, RedisError, };
 use std::net::SocketAddr;
-use std::str::FromStr;
+use std::sync::Arc;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 
-use error::AuthError;
-
-static KEYS: Lazy<Keys> = Lazy::new(|| {
-    let secret = std::env::var("JWT_SECRET").expect("Set JWT_SECRET env var");
-    Keys::new(secret.as_bytes())
-});
-
-struct Keys {
-    encoding: EncodingKey,
-    decoding: DecodingKey,
+#[derive(Clone)]
+struct AppState {
+    redis: Client,
 }
 
-impl Keys {
-    fn new(secret: &[u8]) -> Self {
-        Self {
-            encoding: EncodingKey::from_secret(secret),
-            decoding: DecodingKey::from_secret(secret),
+enum BeijingError {
+    RedisError(RedisError)
+}
+
+impl IntoResponse for BeijingError {
+    fn into_response(self) -> Response {
+        match self {
+           BeijingError::RedisError(e) => {
+               tokio::spawn(async move {
+                  println!("{e}")
+               });
+               StatusCode::INTERNAL_SERVER_ERROR.into_response()
+           }
         }
     }
 }
 
-#[derive(Serialize)]
-struct AuthResponse {
-    token_type: String,
-    access_token: String,
-}
-
-impl AuthResponse {
-    fn new(access_token: String) -> Self {
-        AuthResponse {
-            token_type: "Bearer".into(),
-            access_token,
-        }
+impl From<RedisError> for BeijingError {
+    fn from(value: RedisError) -> Self {
+        BeijingError::RedisError(value)
     }
-}
-
-async fn token() -> Result<Json<AuthResponse>, AuthError> {
-    Ok(Json(AuthResponse::new("Shish".into())))
 }
 
 #[tokio::main]
 async fn main() {
     init_service();
+    let redis =
+        Client::open("redis+unix:///run/redis/redis.sock").expect("Connection to redis sock");
 
-    let app = Router::new().route("/token", post(token));
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
 
-    let addr = SocketAddr::from_str("127.0.0.1:8081").unwrap();
+    let app_state = Arc::new(AppState { redis });
 
-    tracing::debug!("Listening on {addr:?}");
+    let app = Router::new()
+        .route("/", post(get_user))
+        .with_state(app_state);
 
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+async fn get_user(app_state: State<Arc<AppState>>) -> Result<&'static str, BeijingError> {
+    let redis_con = app_state.redis.get_async_connection().await?;
+
+    Ok("sf")
 }
