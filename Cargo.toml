@@ -10,3 +10,5 @@ axum = { version = "0.6", features = ["macros"] }
 redis = { version = "0.22", features = ["aio", "tokio-comp", "ahash"] }
 tokio = { version = "1.24", features = ["full"] }
 civilization = { path = "../." }
+utoipa = "3.0"
+utoipa-swagger-ui = "3.0"

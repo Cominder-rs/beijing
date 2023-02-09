@@ -1,15 +1,19 @@
+mod api;
 mod error;
 
+use axum::extract::{Query as AxumQuery, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::{response::Html, routing::post, Router};
 use civilization::init_service;
 use redis::aio::Connection;
 use redis::{AsyncCommands, Client};
-use redis::{ErrorKind, RedisError, };
+use redis::{ErrorKind, RedisError};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use axum::extract::State;
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+
+type Query<KEY, VAL> = AxumQuery<HashMap<KEY, VAL>>;
 
 #[derive(Clone)]
 struct AppState {
@@ -17,18 +21,16 @@ struct AppState {
 }
 
 enum BeijingError {
-    RedisError(RedisError)
+    RedisError(RedisError),
 }
 
 impl IntoResponse for BeijingError {
     fn into_response(self) -> Response {
         match self {
-           BeijingError::RedisError(e) => {
-               tokio::spawn(async move {
-                  println!("{e}")
-               });
-               StatusCode::INTERNAL_SERVER_ERROR.into_response()
-           }
+            BeijingError::RedisError(e) => {
+                tokio::spawn(async move { println!("{e}") });
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
         }
     }
 }
@@ -63,4 +65,15 @@ async fn get_user(app_state: State<Arc<AppState>>) -> Result<&'static str, Beiji
     let redis_con = app_state.redis.get_async_connection().await?;
 
     Ok("sf")
+}
+
+async fn authorize(
+    client_id: Query<String, String>,
+    redirect_uri: Query<String, String>,
+    response_type: Query<String, String>,
+    code_challenge: Query<String, String>,
+    state: Query<String, String>,
+    nonce: Query<String, String>
+) {
+
 }
